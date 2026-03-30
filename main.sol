@@ -388,3 +388,81 @@ contract BoweyAI is BoweyAI_ReentrancyGuard, BoweyAI_Pausable {
         lastNoteAt = t;
 
         unchecked {
+            noteCount += 1;
+        }
+
+        noteId = keccak256(abi.encodePacked(
+            labyrinthSalt,
+            msg.sender,
+            topic,
+            keccak256(body),
+            noteCount,
+            t
+        ));
+
+        if (_notes[noteId].exists) revert BoweyAI_AlreadyExists();
+        _notes[noteId] = Note({
+            author: msg.sender,
+            createdAt: uint40(t),
+            exists: true,
+            topic: topic,
+            body: body
+        });
+
+        unchecked {
+            topicNoteCount[topic] += 1;
+            authorNoteCount[msg.sender] += 1;
+        }
+        topicLastNoteId[topic] = noteId;
+
+        emit BoweyAI_GlyphNoted(noteId, msg.sender, topic, body.length);
+    }
+
+    function noteAllowlisted(bytes32 topic, bytes calldata body, bytes32[] calldata proof)
+        external
+        whenNotPaused
+        returns (bytes32 noteId)
+    {
+        if (!allowlistEnabled) revert BoweyAI_BadInput();
+        if (!BoweyAI_Merkle.verify(proof, allowlistRoot, allowlistLeaf(msg.sender))) revert BoweyAI_NotAuthorized();
+        // Temporarily bypass the allowlistEnabled guard by calling internal helper.
+        noteId = _noteInternal(msg.sender, topic, body);
+    }
+
+    function noteSigned(
+        address author,
+        bytes32 topic,
+        bytes calldata body,
+        uint256 deadline,
+        bytes calldata signature
+    ) external whenNotPaused returns (bytes32 noteId) {
+        if (author == address(0)) revert BoweyAI_BadInput();
+        if (block.timestamp > deadline) revert BoweyAI_RateLimited(deadline);
+        if (body.length == 0) revert BoweyAI_BadInput();
+        if (body.length > MAX_NOTE_BYTES) revert BoweyAI_TooLong();
+        if (topicSealed[topic]) revert BoweyAI_BadInput();
+        if (noteCount >= MAX_NOTES) revert BoweyAI_InsufficientBalance();
+
+        uint256 n = nonces[author];
+        bytes32 structHash = keccak256(abi.encode(NOTE_TYPEHASH, author, topic, keccak256(body), n, deadline));
+        bytes32 digest = BoweyAI_ECDSA.toTypedDataHash(EIP712_DOMAIN_SEPARATOR, structHash);
+        address signer = BoweyAI_ECDSA.recover(digest, signature);
+        if (signer != author) revert BoweyAI_NotAuthorized();
+        nonces[author] = n + 1;
+
+        noteId = _noteInternal(author, topic, body);
+    }
+
+    function _noteInternal(address author, bytes32 topic, bytes calldata body) internal returns (bytes32 noteId) {
+        uint256 t = block.timestamp;
+        uint256 waitUntil = _nextAllowedAt();
+        if (t < waitUntil) revert BoweyAI_RateLimited(waitUntil);
+        lastNoteAt = t;
+
+        unchecked {
+            noteCount += 1;
+        }
+        noteId = keccak256(abi.encodePacked(labyrinthSalt, author, topic, keccak256(body), noteCount, t));
+        if (_notes[noteId].exists) revert BoweyAI_AlreadyExists();
+
+        _notes[noteId] = Note({ author: author, createdAt: uint40(t), exists: true, topic: topic, body: body });
