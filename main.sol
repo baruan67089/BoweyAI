@@ -466,3 +466,81 @@ contract BoweyAI is BoweyAI_ReentrancyGuard, BoweyAI_Pausable {
         if (_notes[noteId].exists) revert BoweyAI_AlreadyExists();
 
         _notes[noteId] = Note({ author: author, createdAt: uint40(t), exists: true, topic: topic, body: body });
+        unchecked {
+            topicNoteCount[topic] += 1;
+            authorNoteCount[author] += 1;
+        }
+        topicLastNoteId[topic] = noteId;
+        emit BoweyAI_GlyphNoted(noteId, author, topic, body.length);
+    }
+
+    function noteWithTip(bytes32 topic, bytes calldata body, bytes32 tipTag)
+        external
+        payable
+        whenNotPaused
+        returns (bytes32 noteId)
+    {
+        if (msg.value == 0) revert BoweyAI_ZeroAmount();
+        noteId = note(topic, body);
+        emit BoweyAI_TipReceived(msg.sender, msg.value, tipTag);
+    }
+
+    function noteBatch(bytes32 topic, bytes[] calldata bodies) external whenNotPaused returns (bytes32[] memory ids) {
+        uint256 n = bodies.length;
+        if (n == 0) revert BoweyAI_BadInput();
+        if (n > MAX_BATCH) revert BoweyAI_BatchTooLarge();
+        ids = new bytes32[](n);
+        bytes32 head;
+        bytes32 tail;
+        for (uint256 i = 0; i < n; ++i) {
+            bytes32 id = note(topic, bodies[i]);
+            ids[i] = id;
+            if (i == 0) head = id;
+            if (i + 1 == n) tail = id;
+        }
+        emit BoweyAI_NoteBatch(topic, n, head, tail);
+    }
+
+    function moderatorSealTopic(bytes32 topic, bool sealed) external onlyRole(ROLE_MODERATOR) {
+        topicSealed[topic] = sealed;
+        emit BoweyAI_TopicSealed(topic, sealed);
+    }
+
+    function getNote(bytes32 noteId) external view returns (Note memory) {
+        Note memory n = _notes[noteId];
+        if (!n.exists) revert BoweyAI_NotFound();
+        return n;
+    }
+
+    function noteDigest(bytes32 noteId) external view returns (bytes32) {
+        Note storage n = _notes[noteId];
+        if (!n.exists) revert BoweyAI_NotFound();
+        return keccak256(abi.encodePacked(n.author, n.createdAt, n.topic, keccak256(n.body)));
+    }
+
+    function noteMeta(bytes32 noteId) external view returns (address author, uint256 createdAt, bytes32 topic, uint256 size) {
+        Note storage n = _notes[noteId];
+        if (!n.exists) revert BoweyAI_NotFound();
+        author = n.author;
+        createdAt = uint256(n.createdAt);
+        topic = n.topic;
+        size = n.body.length;
+    }
+
+    function topicMeta(bytes32 topic) external view returns (bool sealed, uint256 count, bytes32 lastId) {
+        sealed = topicSealed[topic];
+        count = topicNoteCount[topic];
+        lastId = topicLastNoteId[topic];
+    }
+
+    function authorMeta(address a) external view returns (uint256 count, uint256 nonce) {
+        count = authorNoteCount[a];
+        nonce = nonces[a];
+    }
+
+    function notePreview(bytes32 noteId) external view returns (address author, uint256 createdAt, bytes32 topic, bytes memory preview) {
+        Note storage n = _notes[noteId];
+        if (!n.exists) revert BoweyAI_NotFound();
+        author = n.author;
+        createdAt = uint256(n.createdAt);
+        topic = n.topic;
