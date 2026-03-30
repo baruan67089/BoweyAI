@@ -544,3 +544,81 @@ contract BoweyAI is BoweyAI_ReentrancyGuard, BoweyAI_Pausable {
         author = n.author;
         createdAt = uint256(n.createdAt);
         topic = n.topic;
+        uint256 len = n.body.length;
+        if (len > MAX_PREVIEW_BYTES) len = MAX_PREVIEW_BYTES;
+        preview = n.body[:len];
+    }
+
+    function _nextAllowedAt() internal view returns (uint256) {
+        uint256 base = lastNoteAt + minGapSeconds;
+        if (jitterSeconds == 0) return base;
+        // Deterministic jitter derived from lastNoteAt and sender to spread bursts.
+        uint256 j = uint256(keccak256(abi.encodePacked(labyrinthSalt, msg.sender, lastNoteAt))) % (jitterSeconds + 1);
+        return base + j;
+    }
+
+    function nextAllowedAt(address who) external view returns (uint256) {
+        uint256 base = lastNoteAt + minGapSeconds;
+        if (jitterSeconds == 0) return base;
+        uint256 j = uint256(keccak256(abi.encodePacked(labyrinthSalt, who, lastNoteAt))) % (jitterSeconds + 1);
+        return base + j;
+    }
+
+    // ----- reply escrow (pull payments) -----
+    function queueReply(bytes32 noteId, bytes32 replyId, address to) external payable whenNotPaused nonReentrant {
+        if (to == address(0)) revert BoweyAI_BadInput();
+        if (msg.value == 0) revert BoweyAI_ZeroAmount();
+        if (!_notes[noteId].exists) revert BoweyAI_NotFound();
+        if (replyBeneficiary[replyId] != address(0)) revert BoweyAI_AlreadyExists();
+        replyBeneficiary[replyId] = to;
+        replyEscrow[replyId] = msg.value;
+        emit BoweyAI_ReplyQueued(noteId, replyId, to);
+    }
+
+    function claimReply(bytes32 replyId) external nonReentrant {
+        if (replyClaimed[replyId]) revert BoweyAI_AlreadyExists();
+        address to = replyBeneficiary[replyId];
+        if (to == address(0)) revert BoweyAI_NotFound();
+        uint256 amt = replyEscrow[replyId];
+        if (amt == 0) revert BoweyAI_ZeroAmount();
+        if (msg.sender != to) revert BoweyAI_BadInput();
+        replyClaimed[replyId] = true;
+        replyEscrow[replyId] = 0;
+        (bool ok, ) = payable(to).call{value: amt}("");
+        if (!ok) revert BoweyAI_TransferFailed();
+        emit BoweyAI_ReplyClaimed(replyId, to, amt);
+    }
+
+    // ----- rescue / sweep -----
+    function sweepETH(address to, uint256 amount) external onlyOwner nonReentrant {
+        if (to == address(0)) revert BoweyAI_BadInput();
+        if (amount == 0) revert BoweyAI_ZeroAmount();
+        if (amount > address(this).balance) revert BoweyAI_InsufficientBalance();
+        (bool ok, ) = payable(to).call{value: amount}("");
+        if (!ok) revert BoweyAI_TransferFailed();
+        emit BoweyAI_Sweep(address(0), to, amount);
+    }
+
+    function sweepToken(IERC20Minimal token, address to, uint256 amount) external onlyOwner nonReentrant {
+        if (to == address(0)) revert BoweyAI_BadInput();
+        if (amount == 0) revert BoweyAI_ZeroAmount();
+        token.safeTransfer(to, amount);
+        emit BoweyAI_Sweep(address(token), to, amount);
+    }
+
+    function roleSweepETH(address to, uint256 amount) external onlyRole(ROLE_SWEEPER) nonReentrant {
+        if (to == address(0)) revert BoweyAI_BadInput();
+        if (amount == 0) revert BoweyAI_ZeroAmount();
+        if (amount > address(this).balance) revert BoweyAI_InsufficientBalance();
+        (bool ok, ) = payable(to).call{value: amount}("");
+        if (!ok) revert BoweyAI_TransferFailed();
+        emit BoweyAI_Sweep(address(0), to, amount);
+    }
+
+    // ----- "uniqueness" fingerprint (local) -----
+    function boweyFingerprint() external view returns (bytes32) {
+        return keccak256(abi.encodePacked(
+            labyrinthSalt,
+            genesisAt,
+            owner,
+            pendingOwner,
