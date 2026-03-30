@@ -310,3 +310,81 @@ contract BoweyAI is BoweyAI_ReentrancyGuard, BoweyAI_Pausable {
         emit BoweyAI_GuardianSet(prev, next);
     }
 
+    function guardianPause(bool on) external onlyOwnerOrGuardian {
+        _setPaused(on);
+    }
+
+    function setRole(address who, uint256 mask, bool on) external onlyOwner {
+        if (who == address(0)) revert BoweyAI_BadInput();
+        uint256 cur = roleMask[who];
+        uint256 next = on ? (cur | mask) : (cur & ~mask);
+        roleMask[who] = next;
+        emit BoweyAI_RoleSet(who, mask, on);
+    }
+
+    function proposeOwner(address next) external onlyOwner {
+        if (next == address(0) || next == owner) revert BoweyAI_BadInput();
+        pendingOwner = next;
+        pendingOwnerUnlockAt = block.timestamp + OWNER_DELAY;
+        emit BoweyAI_OwnerProposed(owner, next, pendingOwnerUnlockAt);
+    }
+
+    function clearProposedOwner() external onlyOwner {
+        pendingOwner = address(0);
+        pendingOwnerUnlockAt = 0;
+        emit BoweyAI_OwnerProposed(owner, address(0), 0);
+    }
+
+    function acceptOwner() external {
+        if (msg.sender != pendingOwner) revert BoweyAI_NotPendingOwner();
+        if (block.timestamp < pendingOwnerUnlockAt) revert BoweyAI_RateLimited(pendingOwnerUnlockAt);
+        address prev = owner;
+        owner = pendingOwner;
+        pendingOwner = address(0);
+        pendingOwnerUnlockAt = 0;
+        emit BoweyAI_OwnerAccepted(prev, owner);
+    }
+
+    function setPaused(bool on) external onlyOwner {
+        _setPaused(on);
+    }
+
+    function setRate(uint256 minGapSec, uint256 jitterSec) external onlyOwner {
+        if (minGapSec < 10 || minGapSec > 6 hours) revert BoweyAI_BadInput();
+        if (jitterSec > 10 minutes) revert BoweyAI_BadInput();
+        minGapSeconds = minGapSec;
+        jitterSeconds = jitterSec;
+        emit BoweyAI_RateDial(minGapSec, jitterSec);
+    }
+
+    function sealTopic(bytes32 topic, bool sealed) external onlyOwner {
+        topicSealed[topic] = sealed;
+        emit BoweyAI_TopicSealed(topic, sealed);
+    }
+
+    function setAllowlist(bool on, bytes32 root) external onlyOwner {
+        allowlistEnabled = on;
+        allowlistRoot = root;
+    }
+
+    function allowlistLeaf(address who) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(who));
+    }
+
+    // ----- notes -----
+    function note(bytes32 topic, bytes calldata body) external whenNotPaused returns (bytes32 noteId) {
+        if (allowlistEnabled) {
+            // When enabled, the caller must use noteAllowlisted() to prove membership.
+            revert BoweyAI_NotAuthorized();
+        }
+        if (topicSealed[topic]) revert BoweyAI_BadInput();
+        if (body.length == 0) revert BoweyAI_BadInput();
+        if (body.length > MAX_NOTE_BYTES) revert BoweyAI_TooLong();
+        if (noteCount >= MAX_NOTES) revert BoweyAI_InsufficientBalance();
+
+        uint256 t = block.timestamp;
+        uint256 waitUntil = _nextAllowedAt();
+        if (t < waitUntil) revert BoweyAI_RateLimited(waitUntil);
+        lastNoteAt = t;
+
+        unchecked {
