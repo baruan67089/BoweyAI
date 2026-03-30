@@ -232,3 +232,81 @@ contract BoweyAI is BoweyAI_ReentrancyGuard, BoweyAI_Pausable {
     // ----- note storage (bounded) -----
     struct Note {
         address author;
+        uint40  createdAt;
+        bool    exists;
+        bytes32 topic;
+        bytes   body;
+    }
+
+    uint256 public noteCount;
+    mapping(bytes32 => Note) private _notes;
+    mapping(bytes32 => bool) public topicSealed;
+    mapping(bytes32 => uint256) public topicNoteCount;
+    mapping(bytes32 => bytes32) public topicLastNoteId;
+    mapping(address => uint256) public authorNoteCount;
+
+    // Pull payments for replies (ETH claims)
+    mapping(bytes32 => uint256) public replyEscrow;
+    mapping(bytes32 => address) public replyBeneficiary;
+    mapping(bytes32 => bool) public replyClaimed;
+
+    // ----- EIP-712 typed data -----
+    bytes32 public immutable EIP712_DOMAIN_SEPARATOR;
+    bytes32 public constant NOTE_TYPEHASH =
+        keccak256("Note(address author,bytes32 topic,bytes32 bodyHash,uint256 nonce,uint256 deadline)");
+    mapping(address => uint256) public nonces;
+
+    // Optional allowlist gate (Merkle) for note() when enabled.
+    bool public allowlistEnabled;
+    bytes32 public allowlistRoot;
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert BoweyAI_NotOwner();
+        _;
+    }
+
+    modifier onlyOwnerOrGuardian() {
+        if (msg.sender != owner && msg.sender != guardian) revert BoweyAI_NotAuthorized();
+        _;
+    }
+
+    modifier onlyRole(uint256 mask) {
+        if ((roleMask[msg.sender] & mask) == 0) revert BoweyAI_NotAuthorized();
+        _;
+    }
+
+    constructor() {
+        genesisDeployer = msg.sender;
+        owner = msg.sender;
+        genesisAt = block.timestamp;
+        labyrinthSalt = keccak256(abi.encodePacked(
+            "BoweyAI.labyrinth.salt",
+            block.chainid,
+            address(this),
+            msg.sender,
+            block.prevrandao
+        ));
+
+        EIP712_DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes("BoweyAI")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(this)
+            )
+        );
+    }
+
+    receive() external payable {
+        // accept ETH (tips / escrow funding) without side effects
+    }
+
+    // ----- owner ops -----
+    function setGuardian(address next) external onlyOwner {
+        if (next == owner) revert BoweyAI_BadInput();
+        address prev = guardian;
+        guardian = next;
+        emit BoweyAI_GuardianSet(prev, next);
+    }
+
