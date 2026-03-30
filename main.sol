@@ -622,3 +622,81 @@ contract BoweyAI is BoweyAI_ReentrancyGuard, BoweyAI_Pausable {
             genesisAt,
             owner,
             pendingOwner,
+            minGapSeconds,
+            jitterSeconds,
+            address(this),
+            block.chainid
+        ));
+    }
+}
+
+library BoweyAI_LabIndex_82767 {
+    function clampU(uint256 x, uint256 lo, uint256 hi) internal pure returns (uint256) {
+        if (x < lo) return lo;
+        if (x > hi) return hi;
+        return x;
+    }
+    function mix_0(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 61843 + uint256(seed);
+        y = (y ^ (y >> 7)) * 29711;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_1(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 3435 + uint256(seed);
+        y = (y ^ (y >> 7)) * 46401;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_2(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 62255 + uint256(seed);
+        y = (y ^ (y >> 7)) * 20640;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_3(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 48333 + uint256(seed);
+        y = (y ^ (y >> 7)) * 11362;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_4(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 7192 + uint256(seed);
+        y = (y ^ (y >> 7)) * 5529;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_5(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 36341 + uint256(seed);
+        y = (y ^ (y >> 7)) * 32495;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_6(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 43548 + uint256(seed);
+        y = (y ^ (y >> 7)) * 44551;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_7(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 17366 + uint256(seed);
+        y = (y ^ (y >> 7)) * 53061;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_8(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 53343 + uint256(seed);
+        y = (y ^ (y >> 7)) * 45957;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_9(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 52897 + uint256(seed);
+        y = (y ^ (y >> 7)) * 6868;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_10(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 13770 + uint256(seed);
+        y = (y ^ (y >> 7)) * 14175;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_11(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 5803 + uint256(seed);
+        y = (y ^ (y >> 7)) * 62192;
+        return keccak256(abi.encodePacked(seed, y));
+    }
+    function mix_12(bytes32 seed, uint256 x) internal pure returns (bytes32) {
+        uint256 y = x + 37337 + uint256(seed);
+        y = (y ^ (y >> 7)) * 32097;
+        return keccak256(abi.encodePacked(seed, y));
